@@ -1,0 +1,113 @@
+name: Create DuckStation Flatpak release
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Daily at 00:00 UTC
+  workflow_dispatch:
+
+jobs:
+  check-and-update:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Get current version
+        id: current_version
+        run: |
+          if [ -f "duckstation/.version" ]; then
+            echo "version=$(cat duckstation/.version)" >> $GITHUB_OUTPUT
+          else
+            echo "version=none" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Get latest release
+        id: latest_release
+        run: |
+          # Fetch all releases and extract only essential fields to avoid control character issues
+          releases=$(curl -s https://api.github.com/repos/stenzek/duckstation/releases | jq -c '[.[] | {tag_name, assets: [.assets[] | {name, browser_download_url}]}]')
+          
+          # Filter out preview and latest tags, get the first valid release
+          tag=$(echo "$releases" | jq -r '
+            map(select(.tag_name != "preview" and .tag_name != "latest")) |
+            first |
+            .tag_name
+          ')
+          
+          # If no tag found, exit
+          if [ -z "$tag" ] || [ "$tag" == "null" ]; then
+            echo "Error: No valid release found"
+            exit 1
+          fi
+          
+          # Find the download URL for the AppImage asset
+          url=$(echo "$releases" | jq -r --arg tag "$tag" '
+            .[] |
+            select(.tag_name == $tag) |
+            .assets[] |
+            select(.name == "DuckStation-x64.AppImage") |
+            .browser_download_url
+          ')
+          
+          echo "tag=$tag" >> $GITHUB_OUTPUT
+          echo "url=$url" >> $GITHUB_OUTPUT
+          
+          echo "Latest valid release: $tag"
+          echo "Download URL: $url"
+      
+      - name: Check if update needed
+        id: check_update
+        run: |
+          current="${{ steps.current_version.outputs.version }}"
+          latest="${{ steps.latest_release.outputs.tag }}"
+          
+          echo "Current version: $current"
+          echo "Latest version: $latest"
+          
+          if [ "$current" != "$latest" ] && [ "$latest" != "null" ] && [ -n "$latest" ]; then
+            echo "needs_update=true" >> $GITHUB_OUTPUT
+            echo "Update needed: $current -> $latest"
+          else
+            echo "needs_update=false" >> $GITHUB_OUTPUT
+            echo "Already up to date"
+          fi
+      
+      - name: Download and rename AppImage
+        if: steps.check_update.outputs.needs_update == 'true'
+        run: |
+          url="${{ steps.latest_release.outputs.url }}"
+          
+          if [ -z "$url" ] || [ "$url" == "null" ]; then
+            echo "Error: No download URL found for DuckStation-x64.AppImage"
+            exit 1
+          fi
+          
+          echo "Downloading from: $url"
+          curl -L -o duckstation/DuckStation.AppImage "$url"
+          
+          # Verify download
+          if [ ! -f "duckstation/DuckStation.AppImage" ]; then
+            echo "Error: Download failed"
+            exit 1
+          fi
+          
+          echo "Download successful"
+          ls -lh duckstation/DuckStation.AppImage
+      
+      - name: Update version file
+        if: steps.check_update.outputs.needs_update == 'true'
+        run: |
+          echo "${{ steps.latest_release.outputs.tag }}" > duckstation/.version
+      
+      - name: Commit changes
+        if: steps.check_update.outputs.needs_update == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          git add duckstation/.version
+          git commit -m "Update DuckStation to ${{ steps.latest_release.outputs.tag }}"
+          git push
