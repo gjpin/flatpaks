@@ -15,17 +15,14 @@ mkdir flatter
 chmod 700 flatter
 
 # Create GPG key
-gpg --homedir flatter --quick-gen-key username@github.io
+gpg --homedir flatter --quick-gen-key ghaction@github.io
 
 # List all keys
 KEY_ID=$(gpg --homedir flatter --list-secret-keys --with-colons \
   | awk -F: '/^sec/ {print $5; exit}')
 
 # Export only subkey
-gpg --homedir flatter --export-secret-subkeys --armor $KEY_ID > gpg-private-sub-key.asc
-
-# Get private sub key
-cat gpg-private-sub-key.asc
+gpg --homedir flatter --armor --export-secret-key ghaction@github.io
 ```
 
 # References
