@@ -156,10 +156,6 @@ jobs:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
 
-      - name: Generate CNAME
-        run: |
-          echo "gjpin.github.io" > CNAME
-
       - name: Build
         uses: andyholmes/flatter@main
         with:
@@ -168,7 +164,6 @@ jobs:
           gpg-sign: ${{ steps.gpg.outputs.fingerprint }}
           upload-pages-artifact: true
           upload-pages-includes: |
-            CNAME
             default.css
             index.html
 
