@@ -6,8 +6,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  check-and-update:
+  download:
+    name: Check and download latest version
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      needs_update: ${{ steps.check_update.outputs.needs_update }}
     
     steps:
       - name: Checkout repository
@@ -86,16 +91,24 @@ jobs:
           fi
           
           echo "Downloading from: $url"
-          curl -L -o duckstation/DuckStation.AppImage "$url"
+          curl -L -o duckstation/DuckStation-x64.AppImage "$url"
           
           # Verify download
-          if [ ! -f "duckstation/DuckStation.AppImage" ]; then
+          if [ ! -f "duckstation/DuckStation-x64.AppImage" ]; then
             echo "Error: Download failed"
             exit 1
           fi
           
           echo "Download successful"
-          ls -lh duckstation/DuckStation.AppImage
+          ls -lh duckstation/DuckStation-x64.AppImage
+
+      - name: Upload AppImage as artifact
+        if: steps.check_update.outputs.needs_update == 'true'
+        uses: actions/upload-artifact@v5
+        with:
+          name: duckstation-appimage
+          path: duckstation/DuckStation-x64.AppImage
+          retention-days: 1
       
       - name: Update version file
         if: steps.check_update.outputs.needs_update == 'true'
@@ -111,3 +124,61 @@ jobs:
           git add duckstation/.version
           git commit -m "Update DuckStation to ${{ steps.latest_release.outputs.tag }}"
           git push
+
+  flatter:
+    name: Flatter
+    runs-on: ubuntu-latest
+    needs: download
+    if: needs.download.outputs.needs_update == 'true'
+    container:
+      image: ghcr.io/andyholmes/flatter/gnome:master
+      options: --privileged
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download AppImage artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: duckstation-appimage
+          path: duckstation/
+
+      - name: Setup GPG
+        id: gpg
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Generate CNAME
+        run: |
+          echo "gjpin.github.io" > CNAME
+
+      - name: Build
+        uses: andyholmes/flatter@main
+        with:
+          files: |
+            duckstation/org.duckstation.DuckStation.yaml
+          gpg-sign: ${{ steps.gpg.outputs.fingerprint }}
+          upload-pages-artifact: true
+          upload-pages-includes: |
+            CNAME
+            default.css
+            index.html
+
+  deploy:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: flatter
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

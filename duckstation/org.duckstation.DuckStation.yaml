@@ -25,12 +25,12 @@ modules:
     buildsystem: simple
     sources:
       - type: file
-        path: DuckStation.AppImage
+        path: DuckStation-x64.AppImage
     build-options:
       strip: false
       no-debuginfo: true
     build-commands:
-      - "chmod +x DuckStation.AppImage"
-      - "./DuckStation.AppImage --appimage-extract"
+      - "chmod +x DuckStation-x64.AppImage"
+      - "./DuckStation-x64.AppImage --appimage-extract"
       - "mv squashfs-root/usr/* \"${FLATPAK_DEST}/\""
       - "rm -fr squashfs-root"
