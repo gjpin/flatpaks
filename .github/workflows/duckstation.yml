@@ -144,6 +144,12 @@ jobs:
           name: duckstation-appimage
           path: duckstation/
 
+      - name: Install required Flatpak SDKs
+        run: |
+          flatpak install -y flathub org.freedesktop.Sdk//25.08
+          flatpak install -y flathub org.freedesktop.Platform//25.08
+          flatpak install -y flathub org.freedesktop.Sdk.Extension.llvm21//25.08
+
       - name: Setup GPG
         id: gpg
         uses: crazy-max/ghaction-import-gpg@v6
