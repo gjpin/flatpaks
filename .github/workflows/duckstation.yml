@@ -148,7 +148,6 @@ jobs:
         run: |
           flatpak install -y flathub org.freedesktop.Sdk//25.08
           flatpak install -y flathub org.freedesktop.Platform//25.08
-          flatpak install -y flathub org.freedesktop.Sdk.Extension.llvm21//25.08
 
       - name: Setup GPG
         id: gpg
