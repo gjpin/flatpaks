@@ -1,9 +1,9 @@
-# https://github.com/stenzek/duckstation/releases
-name: Create DuckStation Flatpak release
+# https://git.eden-emu.dev/eden-emu/eden/releases
+name: Create Eden Flatpak release
 
 on:
   schedule:
-    - cron: '0 0 * * *' # Daily at 00:00 UTC
+    - cron: '0 1 * * *' # Daily at 01:00 UTC
   workflow_dispatch:
 
 jobs:
@@ -24,8 +24,8 @@ jobs:
       - name: Get current version
         id: current_version
         run: |
-          if [ -f "duckstation/.version" ]; then
-            echo "version=$(cat duckstation/.version)" >> $GITHUB_OUTPUT
+          if [ -f "eden/.version" ]; then
+            echo "version=$(cat eden/.version)" >> $GITHUB_OUTPUT
           else
             echo "version=none" >> $GITHUB_OUTPUT
           fi
@@ -33,8 +33,8 @@ jobs:
       - name: Get latest release
         id: latest_release
         run: |
-          # Fetch all releases and extract only essential fields to avoid control character issues
-          releases=$(curl -s https://api.github.com/repos/stenzek/duckstation/releases | jq -c '[.[] | {tag_name, assets: [.assets[] | {name, browser_download_url}]}]')
+          # Fetch all releases from Forgejo instance
+          releases=$(curl -s https://git.eden-emu.dev/api/v1/repos/eden-emu/eden/releases | jq -c '[.[] | {tag_name, assets: [.assets[] | {name, browser_download_url}]}]')
           
           # Filter out preview and latest tags, get the first valid release
           tag=$(echo "$releases" | jq -r '
@@ -49,12 +49,12 @@ jobs:
             exit 1
           fi
           
-          # Find the download URL for the AppImage asset
+          # Find the download URL for the Eden AppImage asset (pattern: Eden-Linux-${tag}-steamdeck-gcc-standard.AppImage)
           url=$(echo "$releases" | jq -r --arg tag "$tag" '
             .[] |
             select(.tag_name == $tag) |
             .assets[] |
-            select(.name == "DuckStation-x64.AppImage") |
+            select(.name | test("^Eden-Linux-.*-steamdeck-gcc-standard\\.AppImage$")) |
             .browser_download_url
           ')
           
@@ -87,34 +87,34 @@ jobs:
           url="${{ steps.latest_release.outputs.url }}"
           
           if [ -z "$url" ] || [ "$url" == "null" ]; then
-            echo "Error: No download URL found for DuckStation-x64.AppImage"
+            echo "Error: No download URL found for Eden AppImage"
             exit 1
           fi
           
           echo "Downloading from: $url"
-          curl -L -o duckstation/DuckStation-x64.AppImage "$url"
+          curl -L -o eden/Eden-x64.AppImage "$url"
           
           # Verify download
-          if [ ! -f "duckstation/DuckStation-x64.AppImage" ]; then
+          if [ ! -f "eden/Eden-x64.AppImage" ]; then
             echo "Error: Download failed"
             exit 1
           fi
           
           echo "Download successful"
-          ls -lh duckstation/DuckStation-x64.AppImage
+          ls -lh eden/Eden-x64.AppImage
 
       - name: Upload AppImage as artifact
         if: steps.check_update.outputs.needs_update == 'true'
         uses: actions/upload-artifact@v5
         with:
-          name: duckstation-appimage
-          path: duckstation/DuckStation-x64.AppImage
+          name: eden-appimage
+          path: eden/Eden-x64.AppImage
           retention-days: 1
       
       - name: Update version file
         if: steps.check_update.outputs.needs_update == 'true'
         run: |
-          echo "${{ steps.latest_release.outputs.tag }}" > duckstation/.version
+          echo "${{ steps.latest_release.outputs.tag }}" > eden/.version
       
       - name: Commit changes
         if: steps.check_update.outputs.needs_update == 'true'
@@ -122,8 +122,8 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          git add duckstation/.version
-          git commit -m "Update DuckStation to ${{ steps.latest_release.outputs.tag }}"
+          git add eden/.version
+          git commit -m "Update Eden to ${{ steps.latest_release.outputs.tag }}"
           git push
 
   flatter:
@@ -142,8 +142,8 @@ jobs:
       - name: Download AppImage artifact
         uses: actions/download-artifact@v6
         with:
-          name: duckstation-appimage
-          path: duckstation/
+          name: eden-appimage
+          path: eden/
 
       - name: Install required Flatpak SDKs
         run: |
@@ -161,7 +161,7 @@ jobs:
         uses: andyholmes/flatter@main
         with:
           files: |
-            duckstation/org.duckstation.DuckStation.yaml
+            eden/dev.eden-emu.Eden.yaml
           gpg-sign: ${{ steps.gpg.outputs.fingerprint }}
           upload-pages-artifact: true
           upload-pages-includes: |
