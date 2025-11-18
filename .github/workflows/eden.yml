@@ -161,7 +161,7 @@ jobs:
         uses: andyholmes/flatter@main
         with:
           files: |
-            eden/dev.eden-emu.Eden.yaml
+            eden/dev.edenemu.Eden.yaml
           gpg-sign: ${{ steps.gpg.outputs.fingerprint }}
           upload-pages-artifact: true
           upload-pages-includes: |
