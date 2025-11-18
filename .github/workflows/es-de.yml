@@ -1,0 +1,178 @@
+# https://gitlab.com/es-de/emulationstation-de/-/releases
+name: Create ES-DE Flatpak release
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Daily at 00:00 UTC
+  workflow_dispatch:
+
+jobs:
+  download:
+    name: Check and download latest version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      needs_update: ${{ steps.check_update.outputs.needs_update }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Get current version
+        id: current_version
+        run: |
+          if [ -f "es-de/.version" ]; then
+            echo "version=$(cat es-de/.version)" >> $GITHUB_OUTPUT
+          else
+            echo "version=none" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Get latest release
+        id: latest_release
+        run: |
+          # Get latest ES-DE package version
+          version=$(curl -s "https://gitlab.com/api/v4/projects/18817634/packages?package_name=ES-DE_Stable&order_by=version&sort=desc" | jq -r '.[0].version')
+          
+          # If no version found, exit
+          if [ -z "$version" ] || [ "$version" == "null" ]; then
+            echo "Error: No valid release found"
+            exit 1
+          fi
+          
+          # Get package ID
+          package_id=$(curl -s "https://gitlab.com/api/v4/projects/18817634/packages?package_name=ES-DE_Stable&order_by=version&sort=desc" | jq -r '.[0].id')
+          
+          # Get AppImage file ID
+          appimage_id=$(curl -s "https://gitlab.com/api/v4/projects/18817634/packages/${package_id}/package_files" | jq -r '.[] | select(.file_name == "ES-DE_x64_SteamDeck.AppImage") | .id')
+          
+          # Construct download URL
+          url="https://gitlab.com/es-de/emulationstation-de/-/package_files/${appimage_id}/download"
+          
+          echo "tag=$version" >> $GITHUB_OUTPUT
+          echo "url=$url" >> $GITHUB_OUTPUT
+          
+          echo "Latest valid release: $version"
+          echo "Download URL: $url"
+      
+      - name: Check if update needed
+        id: check_update
+        run: |
+          current="${{ steps.current_version.outputs.version }}"
+          latest="${{ steps.latest_release.outputs.tag }}"
+          
+          echo "Current version: $current"
+          echo "Latest version: $latest"
+          
+          if [ "$current" != "$latest" ] && [ "$latest" != "null" ] && [ -n "$latest" ]; then
+            echo "needs_update=true" >> $GITHUB_OUTPUT
+            echo "Update needed: $current -> $latest"
+          else
+            echo "needs_update=false" >> $GITHUB_OUTPUT
+            echo "Already up to date"
+          fi
+      
+      - name: Download and rename AppImage
+        if: steps.check_update.outputs.needs_update == 'true'
+        run: |
+          url="${{ steps.latest_release.outputs.url }}"
+          
+          if [ -z "$url" ] || [ "$url" == "null" ]; then
+            echo "Error: No download URL found for ES-DE_x64_SteamDeck.AppImage"
+            exit 1
+          fi
+          
+          echo "Downloading from: $url"
+          curl -L -o es-de/ES-DE-x64.AppImage "$url"
+          
+          # Verify download
+          if [ ! -f "es-de/ES-DE-x64.AppImage" ]; then
+            echo "Error: Download failed"
+            exit 1
+          fi
+          
+          echo "Download successful"
+          ls -lh es-de/ES-DE-x64.AppImage
+
+      - name: Upload AppImage as artifact
+        if: steps.check_update.outputs.needs_update == 'true'
+        uses: actions/upload-artifact@v5
+        with:
+          name: es-de-appimage
+          path: es-de/ES-DE-x64.AppImage
+          retention-days: 1
+      
+      - name: Update version file
+        if: steps.check_update.outputs.needs_update == 'true'
+        run: |
+          echo "${{ steps.latest_release.outputs.tag }}" > es-de/.version
+      
+      - name: Commit changes
+        if: steps.check_update.outputs.needs_update == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          git add es-de/.version
+          git commit -m "Update ES-DE to ${{ steps.latest_release.outputs.tag }}"
+          git push
+
+  flatter:
+    name: Flatter
+    runs-on: ubuntu-latest
+    needs: download
+    if: needs.download.outputs.needs_update == 'true'
+    container:
+      image: ghcr.io/andyholmes/flatter/gnome:master
+      options: --privileged
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download AppImage artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: es-de-appimage
+          path: es-de/
+
+      - name: Install required Flatpak SDKs
+        run: |
+          flatpak install -y flathub org.freedesktop.Sdk//25.08
+          flatpak install -y flathub org.freedesktop.Platform//25.08
+
+      - name: Setup GPG
+        id: gpg
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Build
+        uses: andyholmes/flatter@main
+        with:
+          files: |
+            es-de/org.es.ES-DE.yaml
+          gpg-sign: ${{ steps.gpg.outputs.fingerprint }}
+          upload-pages-artifact: true
+          upload-pages-includes: |
+            default.css
+            index.html
+
+  deploy:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: flatter
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
