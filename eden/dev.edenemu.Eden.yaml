@@ -27,5 +27,5 @@ modules:
     build-commands:
       - "chmod +x Eden-x64.AppImage"
       - "./Eden-x64.AppImage --appimage-extract"
-      - "mv squashfs-root/usr/* \"${FLATPAK_DEST}/\""
+      - "mv squashfs-root/* \"${FLATPAK_DEST}/\""
       - "rm -fr squashfs-root"
