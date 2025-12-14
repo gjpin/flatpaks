@@ -43,10 +43,10 @@ jobs:
             .tag_name
           ')
           
-          # If no tag found, exit
+          # If no tag found, set to null and skip update
           if [ -z "$tag" ] || [ "$tag" == "null" ]; then
-            echo "Error: No valid release found"
-            exit 1
+            echo "Warning: No valid release found, skipping update"
+            tag="null"
           fi
           
           # Find the download URL for the AppImage asset
