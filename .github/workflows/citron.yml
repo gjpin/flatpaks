@@ -52,8 +52,9 @@ jobs:
             exit 1
           fi
           
-          # Parse releases
-          releases=$(echo "$body" | jq -c '[.[] | {tag_name, assets: [.assets[] | {name, browser_download_url}]}]')
+          # Parse releases - remove body field which contains unescaped control characters
+          # Use perl to do non-greedy multiline replacement since sed can't handle it well
+          releases=$(printf '%s' "$body" | perl -0777 -pe 's/"body":".*?","url"/"body":"","url"/gs' | jq -c '[.[] | {tag_name: .tag_name, assets: [.assets[] | {name: .name, browser_download_url: .browser_download_url}]}]')
           
           # Filter out preview and latest tags, get the first valid release
           tag=$(echo "$releases" | jq -r '
@@ -68,12 +69,12 @@ jobs:
             exit 1
           fi
           
-          # Find the download URL for the Citron AppImage asset (pattern: Citron_stable_${tag}_v3_linux.AppImage)
+          # Find the download URL for the Citron AppImage asset (pattern: citron_stable-${commit}-linux-x86_64_v3.AppImage)
           url=$(echo "$releases" | jq -r --arg tag "$tag" '
             .[] |
             select(.tag_name == $tag) |
             .assets[] |
-            select(.name | test("^Citron_stable_.*_v3_linux.AppImage$")) |
+            select(.name | test("^citron_stable-.*-linux-x86_64_v3\\.AppImage$")) |
             .browser_download_url
           ')
           
